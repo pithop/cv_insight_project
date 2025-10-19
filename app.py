@@ -1,150 +1,194 @@
 # --- BIBLIOTHÈQUES NÉCESSAIRES ---
 import streamlit as st
-from openai import OpenAI # On utilise la bibliothèque OpenAI, compatible avec OpenRouter
+from openai import OpenAI
 import PyPDF2
-import os
+import json
+import io # Importation nécessaire pour les téléchargements
+
+# --- CONFIGURATION DE LA PAGE ---
+# On change le titre et l'icône de la page
+st.set_page_config(
+    page_title="RH+ Pro | Analyse Multi-CV",
+    page_icon="🚀",
+    layout="wide"
+)
 
 # --- FONCTIONS CLÉS ---
 
 def extract_text_from_pdf(file_object):
-    """
-    Extraire le texte d'un objet fichier PDF téléchargé.
-    """
+    """Extrait le texte d'un objet fichier PDF."""
     try:
         pdf_reader = PyPDF2.PdfReader(file_object)
-        text = ""
-        for page in pdf_reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text
+        # Correction : s'assurer que le texte n'est pas None avant de joindre
+        text = "".join(page.extract_text() for page in pdf_reader.pages if page.extract_text())
         return text
-    except Exception as e:
-        st.error(f"Erreur lors de la lecture du fichier PDF : {e}")
+    except Exception:
+        # Simplification de la gestion d'erreur
         return None
 
-def get_openrouter_analysis(cv_text, job_description_text):
+def get_multi_cv_analysis(cv_data_list, job_description_text):
     """
-    Envoyer le CV et la description de poste à l'API OpenRouter pour analyse.
-    Cette fonction utilise la bibliothèque OpenAI qui est compatible avec l'API d'OpenRouter.
+    Envoie une liste de CV à l'API OpenRouter pour une analyse et un classement.
     """
     try:
-        # Configuration du client pour pointer vers l'API OpenRouter
         client = OpenAI(
-          base_url="https://openrouter.ai/api/v1",
-          api_key=st.secrets["OPENROUTER_API_KEY"],
+            base_url="https://openrouter.ai/api/v1",
+            api_key=st.secrets["OPENROUTER_API_KEY"],
         )
         
-        # --- PROMPT AMÉLIORÉ ET STRICT ---
-        # Instructions très directes pour éviter que l'IA ne dialogue au lieu de travailler.
+        # Le prompt est maintenant conçu pour gérer plusieurs CV et renvoyer une structure JSON
         prompt = f"""
-        Votre unique rôle est d'agir comme un analyseur IA de CV. Votre mission est de générer un rapport d'analyse en comparant le CV et la description de poste.
-
-        CV DU CANDIDAT :
-        ---
-        {cv_text}
-        ---
+        En tant qu'expert en recrutement IA, votre mission est d'analyser une liste de CV par rapport à une description de poste.
+        Vous devez évaluer chaque candidat, extraire leurs informations clés, leur attribuer un score de compatibilité, et les classer.
 
         DESCRIPTION DU POSTE :
         ---
         {job_description_text}
         ---
 
-        INSTRUCTIONS STRICTES :
-        1. Votre réponse doit être UNIQUEMENT en français.
-        2. Générez un rapport au format Markdown en utilisant EXACTEMENT les titres et la structure suivants.
-
-        ### 📝 Synthèse Exécutive
-        (Un résumé percutant en 3 points : le profil en une phrase, la force majeure, et le principal point de vigilance.)
-
-        ### 🎯 Analyse d'Adéquation Détaillée
-        **Compétences Techniques :** (Évaluez la correspondance des technologies, langages, frameworks. Soyez précis et citez des exemples.)
-        **Expérience Professionnelle :** (Analysez la pertinence des expériences passées, des projets et des responsabilités par rapport au poste.)
-
-        ### ⚠️ Points de Vigilance et Questions Stratégiques
-        (Identifiez les zones d'ombre, les manques potentiels et suggérez 3 questions précises et pertinentes à poser en entretien pour clarifier ces points.)
-
-        ### 📊 Tableau de Score Détaillé
-        (Créez un tableau Markdown avec les colonnes : "Critère", "Score (/100)", et "Justification Courte". Soyez objectif dans votre notation.)
-        | Critère | Score (/100) | Justification Courte |
-        | :--- | :--- | :--- |
-        | Compétences Techniques | ... | ... |
-        | Expérience Pertinente | ... | ... |
-        | **Score Global d'Alignement** | **...** | **...** |
-
-        ### ⭐ Recommandation Finale
-        (Donnez une recommandation claire et actionnable : "À rencontrer en priorité", "Potentiel intéressant à explorer", ou "Ne correspond pas aux critères essentiels".)
-
+        LISTE DES CV (nom de fichier et contenu) :
         ---
-        Générez UNIQUEMENT le rapport Markdown ci-dessus. N'ajoutez AUCUN commentaire, explication ou texte d'introduction.
+        {json.dumps(cv_data_list, indent=2)}
+        ---
+
+        INSTRUCTIONS STRICTES :
+        1. Analysez chaque CV de la liste fournie. Utilisez le "nom_fichier" pour identifier le CV dans votre analyse.
+        2. Pour chaque CV, déterminez un score de compatibilité global sur 100.
+        3. Extrayez le nom complet du candidat (si possible, sinon utilisez le nom du fichier).
+        4. Rédigez un résumé très court (2 lignes max) du profil.
+        5. Listez les 3 points forts principaux qui correspondent à l'offre.
+        6. Renvoyez votre analyse sous la forme d'un unique objet JSON. N'ajoutez AUCUN autre texte ou explication.
+        7. Le JSON doit être une liste d'objets, où chaque objet représente un candidat et contient les clés suivantes : "nom_fichier", "nom", "score", "resume", "points_forts".
+        8. Classez les candidats dans la liste JSON du score le plus élevé au plus bas.
+
+        Exemple de format de sortie JSON attendu :
+        [
+          {{
+            "nom_fichier": "cv_jean_dupont.pdf",
+            "nom": "Jean Dupont",
+            "score": 92,
+            "resume": "Développeur Full-Stack avec 5 ans d'expérience sur Python et React. Spécialisé dans les applications SaaS.",
+            "points_forts": [
+              "Excellente maîtrise de Python/Django requise pour le backend.",
+              "Expérience avérée en développement front-end avec React.",
+              "Participation à des projets similaires dans le secteur du SaaS."
+            ]
+          }},
+          {{
+            "nom_fichier": "cv_marie_curie.pdf",
+            "nom": "Marie Curie",
+            "score": 85,
+            "resume": "Ingénieure logicielle spécialisée en data science. Compétences solides en Python mais moins d'expérience sur le front-end.",
+            "points_forts": [
+              "Maîtrise approfondie de Python et de ses librairies data.",
+              "Capacité à gérer des projets complexes de A à Z.",
+              "Bonne compréhension des architectures logicielles."
+            ]
+          }}
+        ]
         """
 
-        # Appel à l'API via le client configuré
         response = client.chat.completions.create(
-          # SOLUTION DÉFINITIVE : On utilise un modèle stable hébergé par un fournisseur fiable.
-          model="google/gemma-2-9b-it:free", 
-          messages=[
-            {
-              "role": "user",
-              "content": prompt,
-            },
-          ],
+            model="google/gemma-2-9b-it:free",
+            response_format={"type": "json_object"}, # On demande explicitement un JSON
+            messages=[{"role": "user", "content": prompt}],
         )
-        # AMÉLIORATION : Vérification pour s'assurer que la réponse n'est pas vide
-        if response.choices and response.choices[0].message and response.choices[0].message.content:
-            return response.choices[0].message.content
+        
+        if response.choices and response.choices[0].message.content:
+            json_response_str = response.choices[0].message.content
+            if json_response_str.startswith("```json"):
+                json_response_str = json_response_str[7:-3].strip()
+            return json.loads(json_response_str)
         else:
-            st.error("L'API a retourné une réponse vide. Le modèle n'a peut-être pas pu générer d'analyse.", icon="🤷")
-            return "Aucun résultat généré."
+            return None
 
     except Exception as e:
-        st.error(f"Une erreur est survenue lors de l'appel à l'API OpenRouter : {e}", icon="🚨")
-        return "L'analyse n'a pas pu être complétée. Vérifiez votre clé d'API OpenRouter et que le modèle choisi est correct."
+        st.error(f"Une erreur est survenue lors de l'appel à l'API : {e}")
+        return None
 
-# --- CONFIGURATION DE L'APPLICATION STREAMLIT ---
-st.set_page_config(
-    page_title="CV-Insight (OpenRouter)",
-    page_icon="📄",
-    layout="wide"
+# --- INTERFACE UTILISATEUR (UI) AMÉLIORÉE ---
+
+# Titre et introduction
+st.title("🚀 RH+ Pro")
+st.markdown("Optimisez votre présélection. Chargez plusieurs CV, analysez-les en quelques secondes et identifiez les meilleurs talents.")
+st.markdown("---")
+
+# Changement de la mise en page : plus de colonnes pour les inputs
+st.subheader("1. Description du Poste")
+job_description = st.text_area("Collez ici l'offre d'emploi complète", height=250, label_visibility="collapsed")
+
+# Changement ici : accept_multiple_files=True
+st.subheader("2. CV des Candidats")
+uploaded_files = st.file_uploader(
+    "Chargez un ou plusieurs CV au format PDF",
+    type="pdf",
+    accept_multiple_files=True,
+    label_visibility="collapsed"
 )
 
-# --- INTERFACE UTILISATEUR (UI) ---
-st.title("CV-Insight : Assistant de Présélection IA 🤖")
-st.markdown("Propulsé par **OpenRouter**")
+# Bouton d'analyse
+st.markdown("") # Espace
+analyze_button = st.button("Analyser les Candidatures", type="primary", use_container_width=True)
 st.markdown("---")
 
-# Création de deux colonnes pour l'interface
-col1, col2 = st.columns(2)
-
-with col1:
-    st.header("📄 CV du Candidat")
-    uploaded_cv = st.file_uploader("Chargez le CV au format PDF", type="pdf")
-
-with col2:
-    st.header("📋 Description du Poste")
-    job_description = st.text_area("Collez ici l'offre d'emploi", height=300)
-
-# Bouton d'analyse centré
-st.markdown("<br>", unsafe_allow_html=True)
-col_btn1, col_btn2, col_btn3 = st.columns([2,3,2])
-with col_btn2:
-    analyze_button = st.button("✨ Lancer l'Analyse ✨", use_container_width=True)
-
-st.markdown("---")
-
-# --- LOGIQUE DE TRAITEMENT ---
+# --- LOGIQUE DE TRAITEMENT ET AFFICHAGE DES RÉSULTATS ---
 if analyze_button:
-    if uploaded_cv is not None and job_description:
-        with st.spinner("Analyse en cours via OpenRouter... L'IA réfléchit 🧠"):
-            cv_text = extract_text_from_pdf(uploaded_cv)
-            
-            # --- AMÉLIORATION CLÉ ---
-            # Vérifier si du texte a bien été extrait du PDF. Le .strip() retire les espaces vides.
-            if cv_text and cv_text.strip():
-                analysis_result = get_openrouter_analysis(cv_text, job_description)
-                st.subheader("✅ Analyse Complétée")
-                st.markdown(analysis_result)
-            else:
-                # Si aucun texte n'est extrait, on affiche un message d'erreur clair à l'utilisateur
-                st.error("Impossible d'extraire le contenu textuel de ce CV. Le fichier PDF est peut-être une image scannée ou utilise un format non supporté. Essayez avec un autre CV au format texte.", icon="⚠️")
+    # Vérification des inputs
+    if not job_description.strip():
+        st.warning("⚠️ Veuillez fournir une description de poste.")
+    elif not uploaded_files: # Vérifie si la liste n'est pas vide
+        st.warning("⚠️ Veuillez charger au moins un CV.")
     else:
-        st.warning("Veuillez charger un CV et fournir une description de poste.", icon="💡")
+        with st.spinner("Analyse en cours... L'IA évalue et classe les profils..."):
+            cv_data = []
+            file_contents = {} # Dictionnaire pour stocker le contenu des fichiers
+            
+            # Boucle sur tous les fichiers chargés
+            for uploaded_file in uploaded_files:
+                text = extract_text_from_pdf(uploaded_file)
+                if text:
+                    cv_data.append({"nom_fichier": uploaded_file.name, "texte_cv": text})
+                    # Stocker le contenu binaire pour le téléchargement
+                    file_contents[uploaded_file.name] = uploaded_file.getvalue()
+            
+            if not cv_data:
+                st.error("❌ Aucun texte n'a pu être extrait des CV fournis. Assurez-vous qu'ils ne sont pas des images scannées.")
+            else:
+                # Appel de la nouvelle fonction d'analyse
+                analysis_results = get_multi_cv_analysis(cv_data, job_description)
+
+                if analysis_results:
+                    st.subheader("🏆 Classement des Meilleurs Profils")
+                    
+                    # Boucle pour afficher chaque candidat dans une carte
+                    for i, candidate in enumerate(analysis_results):
+                        # Définir la couleur du badge en fonction du score
+                        if candidate['score'] >= 85:
+                            badge_icon = "🥇"
+                        elif candidate['score'] >= 70:
+                            badge_icon = "🥈"
+                        else:
+                            badge_icon = "🥉"
+
+                        with st.container(border=True):
+                            col1, col2 = st.columns([4, 1]) # Colonnes pour la mise en page de la carte
+                            with col1:
+                                st.markdown(f"### {badge_icon} {candidate['nom']} ({candidate.get('nom_fichier', 'N/A')})")
+                                st.markdown(f"**Résumé du profil :** {candidate['resume']}")
+                                st.markdown("**Points forts pour ce poste :**")
+                                for point in candidate['points_forts']:
+                                    st.markdown(f"- {point}")
+
+                            with col2:
+                                st.metric(label="Score d'Alignement", value=f"{candidate['score']}%")
+                                # Ajout du bouton de téléchargement
+                                original_filename = candidate.get('nom_fichier')
+                                if original_filename and original_filename in file_contents:
+                                    st.download_button(
+                                        label="📄 Télécharger le CV",
+                                        data=file_contents[original_filename],
+                                        file_name=original_filename,
+                                        mime="application/pdf",
+                                    )
+                else:
+                    st.error("L'analyse a échoué. L'IA n'a pas pu retourner un classement.")
