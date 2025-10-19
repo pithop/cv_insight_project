@@ -1,12 +1,11 @@
 # --- BIBLIOTHÈQUES NÉCESSAIRES ---
 import streamlit as st
-# CORRECTION MAJEURE : On ajoute la bibliothèque requests
 import requests 
 import PyPDF2
 import json
 import io
 import time
-import traceback # Pour un meilleur débogage
+import traceback
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -31,16 +30,14 @@ def extract_text_from_pdf(file_object):
         pdf_reader = PyPDF2.PdfReader(file_object)
         text = "".join(page.extract_text() for page in pdf_reader.pages if page.extract_text())
         if text.strip():
-            st.info(f"✅ Texte extrait : {len(text)} caractères.")
             return text.strip()
         else:
-            st.warning("⚠️ Le PDF semble vide ou illisible.")
+            st.warning(f"⚠️ Le PDF {file_object.name} semble vide ou illisible.")
             return None
     except Exception as e:
-        st.error(f"❌ Erreur d'extraction PDF : {e}")
+        st.error(f"❌ Erreur d'extraction PDF pour {file_object.name}: {e}")
         return None
 
-# CORRECTION MAJEURE : Réécriture de la fonction avec la bibliothèque 'requests'
 def get_single_cv_analysis(cv_text, filename, job_description_text):
     """
     Envoie UN SEUL CV à l'API via un appel direct avec 'requests' pour plus de robustesse.
@@ -51,10 +48,7 @@ def get_single_cv_analysis(cv_text, filename, job_description_text):
         max_job_length = 2000
         cv_text_truncated = cv_text[:max_cv_length]
         job_desc_truncated = job_description_text[:max_job_length]
-        
-        # DEBUG
-        st.write(f"📤 Envoi à l'API via 'requests' - Fichier: {filename}")
-                
+                        
         prompt = f"""Tu es un expert en recrutement. Analyse UNIQUEMENT le CV ci-dessous par rapport à la description de poste.
 
 DESCRIPTION DU POSTE :
@@ -66,20 +60,19 @@ CV DU CANDIDAT (fichier: {filename}):
 INSTRUCTIONS :
 1. Lis attentivement LE CV FOURNI CI-DESSUS.
 2. Extrais le nom complet du candidat.
-3. Calcule un score de 0 à 100 basé sur la correspondance réelle.
+3. Calcule un score de 0 à 100 basé sur la correspondance réelle. Puisqu'il s'agit souvent de postes pour des juniors ou des alternants, accorde de l'importance aux compétences transférables et au potentiel d'apprentissage.
 4. Rédige un résumé court (2 lignes) du profil RÉEL du candidat.
 5. Liste 3 points forts pertinents.
 Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JSON doit contenir les clés "nom_fichier", "nom", "score", "resume", "points_forts".
 """
         
-        # Construction de la requête manuelle
         headers = {
             "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
             "Content-Type": "application/json"
         }
         
         body = {
-            "model": "mistralai/mistral-7b-instruct:free", # Modèle rapide et fiable
+            "model": "mistralai/mistral-7b-instruct:free",
             "messages": [{"role": "user", "content": prompt}]
         }
 
@@ -90,16 +83,11 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JS
             timeout=180
         )
 
-        # Vérifier si la requête a réussi
         if response.status_code == 200:
             response_data = response.json()
             raw_response = response_data['choices'][0]['message']['content'].strip()
             
-            with st.expander(f"🔍 Réponse brute de l'API pour {filename}"):
-                st.code(raw_response)
-            
             try:
-                # Nettoyage et validation
                 if raw_response.startswith("```json"):
                     raw_response = raw_response[7:-3].strip()
                 
@@ -107,16 +95,15 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JS
                 
                 required_fields = ['nom_fichier', 'nom', 'score', 'resume', 'points_forts']
                 if all(field in parsed_json for field in required_fields):
-                    st.success(f"✅ Analyse réussie pour {filename}")
                     return parsed_json
                 else:
                     st.warning(f"⚠️ JSON incomplet pour {filename}")
                     return None
             except json.JSONDecodeError:
-                st.error(f"❌ Format JSON invalide pour {filename}")
+                st.error(f"❌ Format JSON invalide pour {filename}. Réponse brute :")
+                st.code(raw_response)
                 return None
         else:
-            # Erreur HTTP
             st.error(f"❌ Erreur API ({response.status_code}) pour {filename}: {response.text}")
             return None
 
@@ -208,4 +195,4 @@ if st.session_state.analysis_done:
                             key=f"btn_{original_filename}_{i}" 
                         )
     else:
-        st.error("L'analyse a échoué ou n'a retourné aucun résultat valide. Vérifiez les messages de débogage ci-dessus.")
+        st.error("L'analyse a échoué ou n'a retourné aucun résultat valide.")
