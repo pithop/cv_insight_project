@@ -163,9 +163,10 @@ if analyze_button:
                     # Boucle pour afficher chaque candidat dans une carte
                     for i, candidate in enumerate(analysis_results):
                         # Définir la couleur du badge en fonction du score
-                        if candidate['score'] >= 85:
+                        score = candidate.get('score', 0) # Assurer qu'on a un score
+                        if score >= 85:
                             badge_icon = "🥇"
-                        elif candidate['score'] >= 70:
+                        elif score >= 70:
                             badge_icon = "🥈"
                         else:
                             badge_icon = "🥉"
@@ -173,14 +174,15 @@ if analyze_button:
                         with st.container(border=True):
                             col1, col2 = st.columns([4, 1]) # Colonnes pour la mise en page de la carte
                             with col1:
-                                st.markdown(f"### {badge_icon} {candidate['nom']} ({candidate.get('nom_fichier', 'N/A')})")
-                                st.markdown(f"**Résumé du profil :** {candidate['resume']}")
+                                st.markdown(f"### {badge_icon} {candidate.get('nom', 'N/A')} ({candidate.get('nom_fichier', 'N/A')})")
+                                st.markdown(f"**Résumé du profil :** {candidate.get('resume', 'N/A')}")
                                 st.markdown("**Points forts pour ce poste :**")
-                                for point in candidate['points_forts']:
+                                points_forts = candidate.get('points_forts', ['Aucun point fort spécifique identifié.'])
+                                for point in points_forts:
                                     st.markdown(f"- {point}")
 
                             with col2:
-                                st.metric(label="Score d'Alignement", value=f"{candidate['score']}%")
+                                st.metric(label="Score d'Alignement", value=f"{score}%")
                                 # Ajout du bouton de téléchargement
                                 original_filename = candidate.get('nom_fichier')
                                 if original_filename and original_filename in file_contents:
