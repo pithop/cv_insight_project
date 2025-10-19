@@ -97,13 +97,11 @@ Réponds UNIQUEMENT avec ce JSON (pas de texte avant/après) :
 """
 
         response = client.chat.completions.create(
-            # CORRECTION : Remplacement par le modèle Gemini gratuit et stable
-            model="google/gemini-2.0-flash-exp:free",
-            # --- ALTERNATIVE (si Gemini échoue aussi) ---
-            # model="deepseek/deepseek-r1-distill-llama-70b:free",
-            
+            # CORRECTION : Remplacement par un modèle qui est sur votre liste (Gemma 2 9B)
+            model="google/gemma-2-9b-it:free",
+            # On ré-ajoute response_format pour forcer le JSON, ce modèle le supporte
+            response_format={"type": "json_object"}, 
             messages=[{"role": "user", "content": prompt}],
-            # Note : response_format est retiré car le prompt le gère
         )
         
         # Correction 3 : Ajouter du debugging après l'appel API
