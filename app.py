@@ -4,7 +4,8 @@ from openai import OpenAI
 import PyPDF2
 import json
 import io
-import time # Ajout pour une meilleure gestion du spinner
+import time
+import traceback # Pour un meilleur débogage
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -33,6 +34,8 @@ def get_single_cv_analysis(cv_text, filename, job_description_text):
         client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=st.secrets["OPENROUTER_API_KEY"],
+            # CORRECTION : Augmentation du délai d'attente à 3 minutes
+            timeout=180.0 
         )
         
         prompt = f"""
@@ -54,27 +57,46 @@ def get_single_cv_analysis(cv_text, filename, job_description_text):
         3. Extrayez le nom complet du candidat.
         4. Rédigez un résumé très court (2 lignes max) du profil.
         5. Listez les 3 points forts principaux qui correspondent à l'offre.
-        6. Renvoyez votre analyse sous la forme d'un unique objet JSON. N'ajoutez AUCUN autre texte.
-        7. Le JSON doit contenir les clés suivantes : "nom_fichier", "nom", "score", "resume", "points_forts".
+        6. Renvoyez votre analyse sous la forme d'un unique objet JSON. N'ajoutez AUCUN autre texte ou "```json".
+
+        Exemple de sortie attendue :
+        {{
+            "nom_fichier": "{filename}",
+            "nom": "Jean Dupont",
+            "score": 85,
+            "resume": "Profil technique solide avec 5 ans d'expérience...",
+            "points_forts": [
+                "Maîtrise de Python et Django.",
+                "Expérience en gestion de projet.",
+                "Bonne connaissance des bases de données SQL."
+            ]
+        }}
         """
 
         response = client.chat.completions.create(
-            model="google/gemma-2-9b-it:free",
-            response_format={"type": "json_object"},
+            # CORRECTION : Changement pour un modèle plus rapide et fiable
+            model="mistralai/mistral-7b-instruct:free", 
             messages=[{"role": "user", "content": prompt}],
         )
         
         if response.choices and response.choices[0].message.content:
-            # Nettoyage au cas où l'API renvoie ```json ... ```
-            json_response_str = response.choices[0].message.content
-            if json_response_str.startswith("```json"):
-                json_response_str = json_response_str[7:-3].strip()
-            return json.loads(json_response_str)
+            raw_response = response.choices[0].message.content.strip()
+            try:
+                # Nettoyage au cas où l'IA ajoute quand même les marqueurs
+                if raw_response.startswith("```json"):
+                    raw_response = raw_response[7:-3].strip()
+                return json.loads(raw_response)
+            except json.JSONDecodeError:
+                st.error(f"L'IA a retourné un format invalide pour {filename}. Réponse :")
+                st.code(raw_response)
+                return None
         else:
             return None
 
-    except Exception:
-        # En cas d'erreur sur un CV, on renvoie None pour ne pas bloquer les autres
+    except Exception as e:
+        # Affiche l'erreur (ex: Timeout)
+        st.error(f"Erreur d'API lors de l'analyse de {filename}: {e}")
+        traceback.print_exc() # Imprime l'erreur complète dans les logs de Streamlit
         return None
 
 # --- INTERFACE UTILISATEUR (UI) ---
@@ -107,20 +129,17 @@ if analyze_button:
         all_results = []
         file_contents = {}
         
-        # Barre de progression pour un meilleur feedback utilisateur
         progress_bar = st.progress(0, text="Initialisation de l'analyse...")
         
-        # --- NOUVELLE LOGIQUE : BOUCLE SUR CHAQUE FICHIER ---
         for i, uploaded_file in enumerate(uploaded_files):
-            # Mise à jour de la barre de progression
             progress_text = f"Analyse de {uploaded_file.name} ({i+1}/{len(uploaded_files)})..."
             progress_bar.progress((i + 1) / len(uploaded_files), text=progress_text)
             
-            text = extract_text_from_pdf(uploaded_file)
+            # Stockage du contenu avant tout
             file_contents[uploaded_file.name] = uploaded_file.getvalue()
+            text = extract_text_from_pdf(io.BytesIO(file_contents[uploaded_file.name]))
             
             if text:
-                # Appel de la nouvelle fonction pour chaque CV
                 single_result = get_single_cv_analysis(text, uploaded_file.name, job_description)
                 if single_result:
                     all_results.append(single_result)
@@ -129,15 +148,15 @@ if analyze_button:
             else:
                  st.warning(f"Impossible d'extraire le texte de {uploaded_file.name}. Fichier ignoré.")
         
-        progress_bar.empty() # On retire la barre de progression à la fin
+        progress_bar.empty()
 
         if all_results:
             st.subheader("🏆 Classement des Meilleurs Profils")
             
-            # Tri des résultats par score, du plus élevé au plus bas
             sorted_results = sorted(all_results, key=lambda x: x.get('score', 0), reverse=True)
             
-            for candidate in sorted_results:
+            # CORRECTION : Ajout de 'i' pour une clé unique
+            for i, candidate in enumerate(sorted_results): 
                 score = candidate.get('score', 0)
                 badge_icon = "🥇" if score >= 85 else "🥈" if score >= 70 else "🥉"
 
@@ -160,8 +179,8 @@ if analyze_button:
                                 data=file_contents[original_filename],
                                 file_name=original_filename,
                                 mime="application/pdf",
-                                key=f"btn_{original_filename}" # Clé unique pour chaque bouton
+                                # CORRECTION : Clé unique pour éviter les erreurs
+                                key=f"btn_{original_filename}_{i}" 
                             )
         else:
-            # Ce message ne s'affiche que si AUCUN CV n'a pu être analysé
             st.error("L'analyse a échoué pour tous les CV fournis. L'IA n'a pas pu retourner de classement.")
