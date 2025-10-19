@@ -1,6 +1,7 @@
 # --- BIBLIOTHÈQUES NÉCESSAIRES ---
 import streamlit as st
-from openai import OpenAI
+# CORRECTION MAJEURE : On ajoute la bibliothèque requests
+import requests 
 import PyPDF2
 import json
 import io
@@ -24,21 +25,13 @@ if 'analysis_done' not in st.session_state:
 
 # --- FONCTIONS CLÉS ---
 
-# Correction 1 : Améliorer l'extraction PDF avec debugging
 def extract_text_from_pdf(file_object):
     """Extrait le texte d'un objet fichier PDF avec validation."""
     try:
         pdf_reader = PyPDF2.PdfReader(file_object)
-        text = ""
-        # Extraction page par page avec vérification
-        for page in pdf_reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-                
+        text = "".join(page.extract_text() for page in pdf_reader.pages if page.extract_text())
         if text.strip():
-            # DEBUG : Afficher un aperçu du texte extrait
-            st.info(f"✅ Texte extrait : {len(text)} caractères. Aperçu : {text[:200]}...")
+            st.info(f"✅ Texte extrait : {len(text)} caractères.")
             return text.strip()
         else:
             st.warning("⚠️ Le PDF semble vide ou illisible.")
@@ -47,30 +40,20 @@ def extract_text_from_pdf(file_object):
         st.error(f"❌ Erreur d'extraction PDF : {e}")
         return None
 
+# CORRECTION MAJEURE : Réécriture de la fonction avec la bibliothèque 'requests'
 def get_single_cv_analysis(cv_text, filename, job_description_text):
     """
-    Envoie UN SEUL CV à l'API pour analyse et retourne un objet JSON pour ce candidat.
+    Envoie UN SEUL CV à l'API via un appel direct avec 'requests' pour plus de robustesse.
     """
     try:
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=st.secrets["OPENROUTER_API_KEY"],
-            timeout=180.0 
-        )
+        # Limitation de la taille du texte
+        max_cv_length = 4000
+        max_job_length = 2000
+        cv_text_truncated = cv_text[:max_cv_length]
+        job_desc_truncated = job_description_text[:max_job_length]
         
-        # Correction 2 : Limiter la taille du texte et améliorer le prompt
-        
-        # Limitation de la taille du texte pour éviter les dépassements de tokens
-        max_cv_length = 3000  # Limite à ~3000 caractères pour le CV
-        max_job_length = 1500  # Limite à ~1500 caractères pour la description
-                
-        cv_text_truncated = cv_text[:max_cv_length] if len(cv_text) > max_cv_length else cv_text
-        job_desc_truncated = job_description_text[:max_job_length] if len(job_description_text) > max_job_length else job_description_text
-                
-        # DEBUG : Afficher ce qui est envoyé à l'API
-        st.write(f"📤 Envoi à l'API - Fichier: {filename}")
-        st.write(f"   - Longueur CV: {len(cv_text_truncated)} caractères")
-        st.write(f"   - Longueur description: {len(job_desc_truncated)} caractères")
+        # DEBUG
+        st.write(f"📤 Envoi à l'API via 'requests' - Fichier: {filename}")
                 
         prompt = f"""Tu es un expert en recrutement. Analyse UNIQUEMENT le CV ci-dessous par rapport à la description de poste.
 
@@ -81,52 +64,47 @@ CV DU CANDIDAT (fichier: {filename}):
 {cv_text_truncated}
 
 INSTRUCTIONS :
-1. Lis attentivement LE CV FOURNI CI-DESSUS
-2. Extrais le nom du candidat du CV
-3. Calcule un score de 0 à 100 basé sur la correspondance réelle
-4. Rédige un résumé court (2 lignes) du profil RÉEL du candidat
-5. Liste 3 points forts pertinents
-Réponds UNIQUEMENT avec ce JSON (pas de texte avant/après) :
-{{
-    "nom_fichier": "{filename}",
-    "nom": "Nom extrait du CV",
-    "score": 75,
-    "resume": "Résumé du profil réel...",
-    "points_forts": ["Point 1", "Point 2", "Point 3"]
-}}
+1. Lis attentivement LE CV FOURNI CI-DESSUS.
+2. Extrais le nom complet du candidat.
+3. Calcule un score de 0 à 100 basé sur la correspondance réelle.
+4. Rédige un résumé court (2 lignes) du profil RÉEL du candidat.
+5. Liste 3 points forts pertinents.
+Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JSON doit contenir les clés "nom_fichier", "nom", "score", "resume", "points_forts".
 """
-
-        response = client.chat.completions.create(
-            # CORRECTION : Remplacement par un modèle qui est sur votre liste (Gemma 2 9B)
-            model="google/gemma-2-9b-it:free",
-            # On ré-ajoute response_format pour forcer le JSON, ce modèle le supporte
-            response_format={"type": "json_object"}, 
-            messages=[{"role": "user", "content": prompt}],
-        )
         
-        # Correction 3 : Ajouter du debugging après l'appel API
-        if response.choices and response.choices[0].message.content:
-            raw_response = response.choices[0].message.content.strip()
-                        
-            # DEBUG : Afficher la réponse brute de l'API
+        # Construction de la requête manuelle
+        headers = {
+            "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
+            "Content-Type": "application/json"
+        }
+        
+        body = {
+            "model": "mistralai/mistral-7b-instruct:free", # Modèle rapide et fiable
+            "messages": [{"role": "user", "content": prompt}]
+        }
+
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=body,
+            timeout=180
+        )
+
+        # Vérifier si la requête a réussi
+        if response.status_code == 200:
+            response_data = response.json()
+            raw_response = response_data['choices'][0]['message']['content'].strip()
+            
             with st.expander(f"🔍 Réponse brute de l'API pour {filename}"):
                 st.code(raw_response)
-                        
+            
             try:
-                # Nettoyage des balises markdown si présentes
+                # Nettoyage et validation
                 if raw_response.startswith("```json"):
                     raw_response = raw_response[7:-3].strip()
-                elif raw_response.startswith("```"):
-                    raw_response = raw_response[3:-3].strip()
                 
-                # S'assurer que la réponse commence bien par { (début d'un JSON)
-                if not raw_response.startswith("{"):
-                    st.error(f"❌ L'IA n'a pas retourné un JSON pour {filename} (commence par '{raw_response[0]}').")
-                    return None
-
                 parsed_json = json.loads(raw_response)
-                                
-                # Validation que le JSON contient les champs requis
+                
                 required_fields = ['nom_fichier', 'nom', 'score', 'resume', 'points_forts']
                 if all(field in parsed_json for field in required_fields):
                     st.success(f"✅ Analyse réussie pour {filename}")
@@ -134,12 +112,12 @@ Réponds UNIQUEMENT avec ce JSON (pas de texte avant/après) :
                 else:
                     st.warning(f"⚠️ JSON incomplet pour {filename}")
                     return None
-                                
-            except json.JSONDecodeError as je:
+            except json.JSONDecodeError:
                 st.error(f"❌ Format JSON invalide pour {filename}")
-                st.code(raw_response)
                 return None
         else:
+            # Erreur HTTP
+            st.error(f"❌ Erreur API ({response.status_code}) pour {filename}: {response.text}")
             return None
 
     except Exception as e:
@@ -148,7 +126,7 @@ Réponds UNIQUEMENT avec ce JSON (pas de texte avant/après) :
         return None
 
 # --- INTERFACE UTILISATEUR (UI) ---
-st.title("🚀 RH+ Pro (Mode Débogage)")
+st.title("🚀 RH+ Pro")
 st.markdown("Optimisez votre présélection. Chargez plusieurs CV, analysez-les en quelques secondes et identifiez les meilleurs talents.")
 st.markdown("---")
 
@@ -187,15 +165,12 @@ if analyze_button:
             file_bytes = uploaded_file.getvalue()
             st.session_state.file_contents[uploaded_file.name] = file_bytes
             
-            # Appel de la fonction d'extraction (qui contient maintenant des st.info)
             text = extract_text_from_pdf(io.BytesIO(file_bytes))
             
             if text:
-                # Appel de la fonction d'analyse (qui contient st.write, st.expander, etc.)
                 single_result = get_single_cv_analysis(text, uploaded_file.name, job_description)
                 if single_result:
                     st.session_state.all_results.append(single_result)
-            # Pas de 'else' ici, car extract_text_from_pdf gère ses propres messages d'erreur
         
         progress_bar.empty()
 
