@@ -97,11 +97,13 @@ Réponds UNIQUEMENT avec ce JSON (pas de texte avant/après) :
 """
 
         response = client.chat.completions.create(
-            # Correction 4 : Alternative - Essayer un modèle différent
-            model="meta-llama/llama-3.1-8b-instruct:free",  # Alternative gratuite plus fiable
+            # CORRECTION : Remplacement par le modèle Gemini gratuit et stable
+            model="google/gemini-2.0-flash-exp:free",
+            # --- ALTERNATIVE (si Gemini échoue aussi) ---
+            # model="deepseek/deepseek-r1-distill-llama-70b:free",
+            
             messages=[{"role": "user", "content": prompt}],
-            # Note : response_format n'est pas supporté par tous les modèles, 
-            # nous allons donc le retirer et compter sur le prompt et le parsing.
+            # Note : response_format est retiré car le prompt le gère
         )
         
         # Correction 3 : Ajouter du debugging après l'appel API
