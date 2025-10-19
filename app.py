@@ -15,7 +15,6 @@ st.set_page_config(
 )
 
 # --- INITIALISATION DU SESSION STATE ---
-# C'est la clé ! On s'assure que les variables persistent.
 if 'all_results' not in st.session_state:
     st.session_state.all_results = []
 if 'file_contents' not in st.session_state:
@@ -25,13 +24,27 @@ if 'analysis_done' not in st.session_state:
 
 # --- FONCTIONS CLÉS ---
 
+# Correction 1 : Améliorer l'extraction PDF avec debugging
 def extract_text_from_pdf(file_object):
-    """Extrait le texte d'un objet fichier PDF."""
+    """Extrait le texte d'un objet fichier PDF avec validation."""
     try:
         pdf_reader = PyPDF2.PdfReader(file_object)
-        text = "".join(page.extract_text() for page in pdf_reader.pages if page.extract_text())
-        return text
-    except Exception:
+        text = ""
+        # Extraction page par page avec vérification
+        for page in pdf_reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+                
+        if text.strip():
+            # DEBUG : Afficher un aperçu du texte extrait
+            st.info(f"✅ Texte extrait : {len(text)} caractères. Aperçu : {text[:200]}...")
+            return text.strip()
+        else:
+            st.warning("⚠️ Le PDF semble vide ou illisible.")
+            return None
+    except Exception as e:
+        st.error(f"❌ Erreur d'extraction PDF : {e}")
         return None
 
 def get_single_cv_analysis(cv_text, filename, job_description_text):
@@ -45,55 +58,85 @@ def get_single_cv_analysis(cv_text, filename, job_description_text):
             timeout=180.0 
         )
         
-        prompt = f"""
-        En tant qu'expert en recrutement IA, votre mission est d'analyser le CV suivant par rapport à une description de poste et de renvoyer une analyse structurée en JSON.
+        # Correction 2 : Limiter la taille du texte et améliorer le prompt
+        
+        # Limitation de la taille du texte pour éviter les dépassements de tokens
+        max_cv_length = 3000  # Limite à ~3000 caractères pour le CV
+        max_job_length = 1500  # Limite à ~1500 caractères pour la description
+                
+        cv_text_truncated = cv_text[:max_cv_length] if len(cv_text) > max_cv_length else cv_text
+        job_desc_truncated = job_description_text[:max_job_length] if len(job_description_text) > max_job_length else job_description_text
+                
+        # DEBUG : Afficher ce qui est envoyé à l'API
+        st.write(f"📤 Envoi à l'API - Fichier: {filename}")
+        st.write(f"   - Longueur CV: {len(cv_text_truncated)} caractères")
+        st.write(f"   - Longueur description: {len(job_desc_truncated)} caractères")
+                
+        prompt = f"""Tu es un expert en recrutement. Analyse UNIQUEMENT le CV ci-dessous par rapport à la description de poste.
 
-        DESCRIPTION DU POSTE :
-        ---
-        {job_description_text}
-        ---
+DESCRIPTION DU POSTE :
+{job_desc_truncated}
 
-        CV DU CANDIDAT (nom du fichier: {filename}):
-        ---
-        {cv_text}
-        ---
+CV DU CANDIDAT (fichier: {filename}):
+{cv_text_truncated}
 
-        INSTRUCTIONS STRICTES :
-        1. Analysez le CV fourni.
-        2. Déterminez un score de compatibilité global sur 100.
-        3. Extrayez le nom complet du candidat.
-        4. Rédigez un résumé très court (2 lignes max) du profil.
-        5. Listez les 3 points forts principaux qui correspondent à l'offre.
-        6. Renvoyez votre analyse sous la forme d'un unique objet JSON. N'ajoutez AUCUN autre texte ou "```json".
-
-        Exemple de sortie attendue :
-        {{
-            "nom_fichier": "{filename}",
-            "nom": "Jean Dupont",
-            "score": 85,
-            "resume": "Profil technique solide avec 5 ans d'expérience...",
-            "points_forts": [
-                "Maîtrise de Python et Django.",
-                "Expérience en gestion de projet.",
-                "Bonne connaissance des bases de données SQL."
-            ]
-        }}
-        """
+INSTRUCTIONS :
+1. Lis attentivement LE CV FOURNI CI-DESSUS
+2. Extrais le nom du candidat du CV
+3. Calcule un score de 0 à 100 basé sur la correspondance réelle
+4. Rédige un résumé court (2 lignes) du profil RÉEL du candidat
+5. Liste 3 points forts pertinents
+Réponds UNIQUEMENT avec ce JSON (pas de texte avant/après) :
+{{
+    "nom_fichier": "{filename}",
+    "nom": "Nom extrait du CV",
+    "score": 75,
+    "resume": "Résumé du profil réel...",
+    "points_forts": ["Point 1", "Point 2", "Point 3"]
+}}
+"""
 
         response = client.chat.completions.create(
-            model="google/gemma-2-9b-it:free", 
-            response_format={"type": "json_object"},
+            # Correction 4 : Alternative - Essayer un modèle différent
+            model="meta-llama/llama-3.1-8b-instruct:free",  # Alternative gratuite plus fiable
             messages=[{"role": "user", "content": prompt}],
+            # Note : response_format n'est pas supporté par tous les modèles, 
+            # nous allons donc le retirer et compter sur le prompt et le parsing.
         )
         
+        # Correction 3 : Ajouter du debugging après l'appel API
         if response.choices and response.choices[0].message.content:
             raw_response = response.choices[0].message.content.strip()
+                        
+            # DEBUG : Afficher la réponse brute de l'API
+            with st.expander(f"🔍 Réponse brute de l'API pour {filename}"):
+                st.code(raw_response)
+                        
             try:
+                # Nettoyage des balises markdown si présentes
                 if raw_response.startswith("```json"):
                     raw_response = raw_response[7:-3].strip()
-                return json.loads(raw_response)
-            except json.JSONDecodeError:
-                st.warning(f"L'IA a retourné un format invalide pour {filename}. Réponse :")
+                elif raw_response.startswith("```"):
+                    raw_response = raw_response[3:-3].strip()
+                
+                # S'assurer que la réponse commence bien par { (début d'un JSON)
+                if not raw_response.startswith("{"):
+                    st.error(f"❌ L'IA n'a pas retourné un JSON pour {filename} (commence par '{raw_response[0]}').")
+                    return None
+
+                parsed_json = json.loads(raw_response)
+                                
+                # Validation que le JSON contient les champs requis
+                required_fields = ['nom_fichier', 'nom', 'score', 'resume', 'points_forts']
+                if all(field in parsed_json for field in required_fields):
+                    st.success(f"✅ Analyse réussie pour {filename}")
+                    return parsed_json
+                else:
+                    st.warning(f"⚠️ JSON incomplet pour {filename}")
+                    return None
+                                
+            except json.JSONDecodeError as je:
+                st.error(f"❌ Format JSON invalide pour {filename}")
                 st.code(raw_response)
                 return None
         else:
@@ -105,7 +148,7 @@ def get_single_cv_analysis(cv_text, filename, job_description_text):
         return None
 
 # --- INTERFACE UTILISATEUR (UI) ---
-st.title("🚀 RH+ Pro")
+st.title("🚀 RH+ Pro (Mode Débogage)")
 st.markdown("Optimisez votre présélection. Chargez plusieurs CV, analysez-les en quelques secondes et identifiez les meilleurs talents.")
 st.markdown("---")
 
@@ -131,10 +174,9 @@ if analyze_button:
     elif not uploaded_files:
         st.warning("⚠️ Veuillez charger au moins un CV.")
     else:
-        # CORRECTION : On réinitialise le state avant une NOUVELLE analyse
         st.session_state.all_results = []
         st.session_state.file_contents = {}
-        st.session_state.analysis_done = True # On indique que l'analyse a été lancée
+        st.session_state.analysis_done = True 
         
         progress_bar = st.progress(0, text="Initialisation de l'analyse...")
         
@@ -143,24 +185,21 @@ if analyze_button:
             progress_bar.progress((i + 1) / len(uploaded_files), text=progress_text)
             
             file_bytes = uploaded_file.getvalue()
-            # CORRECTION : On sauvegarde les bytes du fichier dans le session state
             st.session_state.file_contents[uploaded_file.name] = file_bytes
             
+            # Appel de la fonction d'extraction (qui contient maintenant des st.info)
             text = extract_text_from_pdf(io.BytesIO(file_bytes))
             
             if text:
+                # Appel de la fonction d'analyse (qui contient st.write, st.expander, etc.)
                 single_result = get_single_cv_analysis(text, uploaded_file.name, job_description)
                 if single_result:
-                    # CORRECTION : On sauvegarde le résultat dans le session state
                     st.session_state.all_results.append(single_result)
-            else:
-                 st.warning(f"Impossible d'extraire le texte de {uploaded_file.name}. Fichier ignoré.")
+            # Pas de 'else' ici, car extract_text_from_pdf gère ses propres messages d'erreur
         
         progress_bar.empty()
 
-# --- AFFICHAGE DES RÉSULTATS (MAINTENANT INDÉPENDANT) ---
-# Cette partie s'exécute maintenant à CHAQUE rechargement, y compris
-# après un clic sur "Télécharger", car les données sont dans st.session_state.
+# --- AFFICHAGE DES RÉSULTATS ---
 if st.session_state.analysis_done:
     if st.session_state.all_results:
         st.subheader("🏆 Classement des Meilleurs Profils")
@@ -185,7 +224,6 @@ if st.session_state.analysis_done:
                     st.metric(label="Score", value=f"{score}%")
                     original_filename = candidate.get('nom_fichier')
                     
-                    # On lit les données du fichier depuis le session state
                     if original_filename and original_filename in st.session_state.file_contents:
                         st.download_button(
                             label="📄 Télécharger le CV",
@@ -195,5 +233,4 @@ if st.session_state.analysis_done:
                             key=f"btn_{original_filename}_{i}" 
                         )
     else:
-        # S'affiche si l'analyse a été lancée mais a échoué pour tous les CV
-        st.error("L'analyse a échoué pour tous les CV fournis. L'IA n'a pas pu retourner de classement.")
+        st.error("L'analyse a échoué ou n'a retourné aucun résultat valide. Vérifiez les messages de débogage ci-dessus.")
