@@ -97,7 +97,7 @@ Réponds UNIQUEMENT avec un objet JSON valide. L'objet doit contenir les clés s
         }
 
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/compilation",
+            "https://openrouter.ai/api/v1/chat/completions", # <-- CORRIGÉ ICI
             headers=headers,
             json=body,
             timeout=180
