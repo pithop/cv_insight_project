@@ -10,7 +10,7 @@ import traceback
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
     page_title="RH+ Pro | Analyse Multi-CV",
-    page_icon="🚀",
+    page_icon="📄",  # Modifié
     layout="wide"
 )
 
@@ -21,6 +21,8 @@ if 'file_contents' not in st.session_state:
     st.session_state.file_contents = {}
 if 'analysis_done' not in st.session_state:
     st.session_state.analysis_done = False
+if 'is_running' not in st.session_state:  # Ajout
+    st.session_state.is_running = False
 
 # --- FONCTIONS CLÉS ---
 
@@ -32,10 +34,10 @@ def extract_text_from_pdf(file_object):
         if text.strip():
             return text.strip()
         else:
-            st.warning(f"⚠️ Le PDF {file_object.name} semble vide ou illisible.")
+            st.warning(f"Le PDF {file_object.name} semble vide ou illisible.") # Modifié
             return None
     except Exception as e:
-        st.error(f"❌ Erreur d'extraction PDF pour {file_object.name}: {e}")
+        st.error(f"Erreur d'extraction PDF pour {file_object.name}: {e}") # Modifié
         return None
 
 def get_single_cv_analysis(cv_text, filename, job_description_text):
@@ -77,7 +79,7 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JS
         }
 
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            "https.openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=body,
             timeout=180
@@ -97,14 +99,14 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JS
                 if all(field in parsed_json for field in required_fields):
                     return parsed_json
                 else:
-                    st.warning(f"⚠️ JSON incomplet pour {filename}")
+                    st.warning(f"JSON incomplet pour {filename}") # Modifié
                     return None
             except json.JSONDecodeError:
-                st.error(f"❌ Format JSON invalide pour {filename}. Réponse brute :")
+                st.error(f"Format JSON invalide pour {filename}. Réponse brute :") # Modifié
                 st.code(raw_response)
                 return None
         else:
-            st.error(f"❌ Erreur API ({response.status_code}) pour {filename}: {response.text}")
+            st.error(f"Erreur API ({response.status_code}) pour {filename}: {response.text}") # Modifié
             return None
 
     except Exception as e:
@@ -113,32 +115,47 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JS
         return None
 
 # --- INTERFACE UTILISATEUR (UI) ---
-st.title("🚀 RH+ Pro")
+st.title("RH+ Pro") # Modifié
 st.markdown("Optimisez votre présélection. Chargez plusieurs CV, analysez-les en quelques secondes et identifiez les meilleurs talents.")
 st.markdown("---")
 
-st.subheader("1. Description du Poste")
-job_description = st.text_area("Collez ici l'offre d'emploi complète", height=250, label_visibility="collapsed")
+# --- PANNEAU LATÉRAL POUR LES INPUTS ---
+with st.sidebar:
+    st.header("1. Description du Poste")
+    job_description = st.text_area(
+        "Collez ici l'offre d'emploi complète", 
+        height=250, 
+        label_visibility="collapsed",
+        disabled=st.session_state.is_running # Ajout
+    )
 
-st.subheader("2. CV des Candidats")
-uploaded_files = st.file_uploader(
-    "Chargez un ou plusieurs CV au format PDF",
-    type="pdf",
-    accept_multiple_files=True,
-    label_visibility="collapsed"
+    st.header("2. CV des Candidats")
+    uploaded_files = st.file_uploader(
+        "Chargez un ou plusieurs CV au format PDF",
+        type="pdf",
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        disabled=st.session_state.is_running # Ajout
+    )
+
+# --- ZONE PRINCIPALE POUR LE BOUTON ET LES RÉSULTATS ---
+analyze_button = st.button(
+    "Analyser les Candidatures", 
+    type="primary", 
+    use_container_width=True,
+    disabled=st.session_state.is_running # Ajout
 )
-
-st.markdown("")
-analyze_button = st.button("Analyser les Candidatures", type="primary", use_container_width=True)
 st.markdown("---")
+
 
 # --- LOGIQUE DE TRAITEMENT ---
 if analyze_button:
     if not job_description.strip():
-        st.warning("⚠️ Veuillez fournir une description de poste.")
+        st.warning("Veuillez fournir une description de poste.") # Modifié
     elif not uploaded_files:
-        st.warning("⚠️ Veuillez charger au moins un CV.")
+        st.warning("Veuillez charger au moins un CV.") # Modifié
     else:
+        st.session_state.is_running = True # Ajout
         st.session_state.all_results = []
         st.session_state.file_contents = {}
         st.session_state.analysis_done = True 
@@ -160,22 +177,24 @@ if analyze_button:
                     st.session_state.all_results.append(single_result)
         
         progress_bar.empty()
+        st.session_state.is_running = False # Ajout
+        st.rerun() # Ajout pour rafraîchir l'état desactivé des boutons
 
 # --- AFFICHAGE DES RÉSULTATS ---
 if st.session_state.analysis_done:
     if st.session_state.all_results:
-        st.subheader("🏆 Classement des Meilleurs Profils")
+        st.subheader("Classement des Profils") # Modifié
         
         sorted_results = sorted(st.session_state.all_results, key=lambda x: x.get('score', 0), reverse=True)
         
         for i, candidate in enumerate(sorted_results): 
             score = candidate.get('score', 0)
-            badge_icon = "🥇" if score >= 85 else "🥈" if score >= 70 else "🥉"
+            # badge_icon supprimé
 
             with st.container(border=True):
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    st.markdown(f"### {badge_icon} {candidate.get('nom', 'N/A')} ({candidate.get('nom_fichier', 'N/A')})")
+                    st.markdown(f"### {candidate.get('nom', 'N/A')} ({candidate.get('nom_fichier', 'N/A')})") # Modifié
                     st.markdown(f"**Résumé :** {candidate.get('resume', 'N/A')}")
                     st.markdown("**Points forts pour ce poste :**")
                     points_forts = candidate.get('points_forts', ['Aucun identifié.'])
@@ -188,11 +207,11 @@ if st.session_state.analysis_done:
                     
                     if original_filename and original_filename in st.session_state.file_contents:
                         st.download_button(
-                            label="📄 Télécharger le CV",
+                            label="Télécharger le CV", # Modifié
                             data=st.session_state.file_contents[original_filename],
                             file_name=original_filename,
                             mime="application/pdf",
                             key=f"btn_{original_filename}_{i}" 
                         )
-    else:
+    elif not st.session_state.is_running: # Ajout pour ne pas afficher d'erreur pendant le chargement
         st.error("L'analyse a échoué ou n'a retourné aucun résultat valide.")
