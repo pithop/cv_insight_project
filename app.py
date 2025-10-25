@@ -10,7 +10,6 @@ st.set_page_config(
 )
 
 # --- CACHER LES ÉLÉMENTS STREAMLIT PAR DÉFAUT ---
-# (La sidebar, le padding en haut, etc.)
 st.markdown(
     """
     <style>
@@ -23,18 +22,9 @@ st.markdown(
             padding-bottom: 0rem;
             margin-top: 0rem;
         }
-        /* Cache le header "Made with Streamlit" */
-        header {
-            visibility: hidden;
-        }
-        /* Cache le footer "Made with Streamlit" */
-        footer {
-            visibility: hidden;
-        }
-        /* Cache le menu hamburger */
-        [data-testid="stActionButton"] {
-            display: none;
-        }
+        header { visibility: hidden; }
+        footer { visibility: hidden; }
+        [data-testid="stActionButton"] { display: none; }
     </style>
     """,
     unsafe_allow_html=True
@@ -44,7 +34,6 @@ st.markdown(
 def read_file_content(file_path):
     """Ouvre et lit un fichier, retourne son contenu."""
     try:
-        # S'assure qu'on part du bon dossier (le dossier du script)
         script_dir = os.path.dirname(__file__)
         full_path = os.path.join(script_dir, file_path)
         with open(full_path, 'r', encoding='utf-8') as f:
@@ -65,17 +54,54 @@ html_content = read_file_content("index.html")
 
 if css_content and html_content:
     # --- 3. Injecter le CSS dans le HTML ---
-    # On remplace le <link> par le contenu réel du CSS pour
-    # que le composant HTML ait tout ce dont il a besoin.
     final_html = html_content.replace(
         '<link rel="stylesheet" href="style.css">', 
         f"<style>{css_content}</style>"
     )
     
-    # --- 4. Afficher la page complète ---
-    # C'est la fonction correcte pour afficher une page HTML
-    # On met une hauteur très grande pour que le scrolling soit géré par le HTML
-    components.html(final_html, height=4000, scrolling=True)
+    # --- 4. CORRECTION : AJOUTER UN SCRIPT POUR L'AUTO-HAUTEUR ---
+    # Ce script envoie un message à Streamlit avec la hauteur
+    # réelle de la page, pour que l'iframe s'adapte.
+    auto_height_script = """
+    <script>
+        // Fonction pour envoyer la hauteur à Streamlit
+        const sendHeight = () => {
+            const height = document.documentElement.scrollHeight;
+            window.parent.postMessage({
+                isStreamlitMessage: true, // Nécessaire pour que Streamlit écoute
+                type: 'setFrameHeight',
+                height: height
+            }, '*');
+        };
+
+        // Envoyer au chargement initial
+        window.addEventListener('load', sendHeight);
+
+        // Envoyer lors du redimensionnement
+        window.addEventListener('resize', sendHeight);
+
+        // Observer les changements dans le DOM (ex: animations)
+        const observer = new MutationObserver(sendHeight);
+        observer.observe(document.body, {
+            attributes: true,
+            childList: true,
+            subtree: true
+        });
+
+        // Envoyer la hauteur à intervalles réguliers (pour l'animation)
+        setInterval(sendHeight, 500);
+    </script>
+    """
+    
+    # On ajoute le script juste avant la fin du </body>
+    final_html = final_html.replace("</body>", f"{auto_height_script}</body>")
+    
+    # --- 5. Afficher la page complète (CORRECTION) ---
+    # On enlève la hauteur fixe.
+    # scrolling=False est important pour que la page principale défile,
+    # et non l'iframe.
+    components.html(final_html, scrolling=False)
+
 else:
     st.error("L'application n'a pas pu démarrer.")
     st.info("Vérifie que 'index.html' et 'style.css' sont présents.")
