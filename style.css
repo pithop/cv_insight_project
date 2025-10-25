@@ -1,0 +1,386 @@
+/* --- 1. Variables et Configuration Globale --- */
+:root {
+    --primary-blue: #0052CC;
+    --primary-blue-hover: #0041A3;
+    --text-dark: #1A1A1A;
+    --text-light: #4B4B4B;
+    --text-subtle: #737373;
+    --bg-white: #FFFFFF;
+    --bg-light-gray: #f7f7f7;
+    --border-color: #eaeaea;
+    --score-good: #008a20;
+    --score-medium: #b88600;
+    
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --radius: 10px;
+    --section-padding: 6rem 0;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-sans);
+    color: var(--text-light);
+    line-height: 1.6;
+    background: var(--bg-white);
+    -webkit-font-smoothing: antialiased;
+}
+
+.container {
+    max-width: 1024px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+h1, h2, h3, h4 {
+    color: var(--text-dark);
+    line-height: 1.25;
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+p {
+    color: var(--text-light);
+    font-size: 1.1rem;
+    line-height: 1.7;
+}
+
+/* --- 2. Boutons --- */
+.btn {
+    display: inline-block;
+    padding: 0.8rem 1.75rem;
+    border-radius: var(--radius);
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+.btn-primary {
+    background: var(--primary-blue);
+    color: var(--bg-white);
+    font-size: 1.05rem;
+    border-color: var(--primary-blue);
+}
+.btn-primary:hover {
+    background: var(--primary-blue-hover);
+    border-color: var(--primary-blue-hover);
+    transform: translateY(-2px);
+}
+.btn-large {
+    font-size: 1.15rem;
+    padding: 1rem 2.25rem;
+}
+
+/* --- 3. Sections de la Page --- */
+nav {
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+.nav-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 70px;
+}
+.logo {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    text-decoration: none;
+}
+.hero {
+    text-align: center;
+    padding: 7rem 0 5rem 0;
+}
+.hero h1 {
+    font-size: 3.5rem;
+    font-weight: 700;
+    max-width: 800px;
+    margin: 0 auto 1.5rem auto;
+}
+.hero .subtitle {
+    font-size: 1.25rem;
+    max-width: 650px;
+    margin: 0 auto 2.5rem auto;
+    color: var(--text-subtle);
+}
+.cta-final {
+    text-align: center;
+    padding: 7rem 0;
+    background: var(--bg-light-gray);
+    margin-top: var(--section-padding);
+}
+.cta-final h2 {
+    font-size: 2.5rem;
+    max-width: 600px;
+    margin: 0 auto 1.5rem auto;
+}
+footer {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    color: var(--text-subtle);
+    font-size: 0.9rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* --- 4. SECTION D'ANIMATION DE LA DÉMO --- */
+
+.demo-section {
+    padding-bottom: var(--section-padding);
+}
+
+.demo-browser {
+    background: var(--bg-white);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+}
+
+.demo-browser-bar {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-light-gray);
+}
+
+.demo-browser-dots {
+    width: 55px;
+    height: 12px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 58 14"><circle cx="7" cy="7" r="5" fill="%23FF5F56"/><circle cx="29" cy="7" r="5" fill="%23FFBD2E"/><circle cx="51" cy="7" r="5" fill="%2327C93F"/></svg>');
+    background-repeat: no-repeat;
+}
+
+.demo-app {
+    display: flex;
+    min-height: 500px; /* Hauteur de la maquette */
+}
+
+/* Sidebar de la maquette */
+.demo-sidebar {
+    width: 35%;
+    padding: 1.5rem;
+    border-right: 1px solid var(--border-color);
+    background: var(--bg-light-gray);
+    font-size: 0.9rem;
+}
+.demo-sidebar h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+    letter-spacing: 0.5px;
+    margin-bottom: 0.75rem;
+}
+
+/* Main de la maquette */
+.demo-main {
+    width: 65%;
+    padding: 1.5rem;
+    position: relative; /* Nécessaire pour superposer les étapes */
+    font-size: 0.9rem;
+}
+
+/* --- 5. LOGIQUE D'ANIMATION (CSS KEYFRAMES) --- */
+
+/* Durée totale de la boucle d'animation */
+:root { --demo-duration: 12s; }
+
+/* Étape 1: Simulation de frappe */
+.demo-job-desc {
+    background: var(--bg-white);
+    padding: 0.75rem;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    height: 90px;
+    position: relative;
+    overflow: hidden;
+}
+
+/*
+ *
+ * --- CORRECTION ICI ---
+ * J'ai ajouté position: absolute et les coordonnées top/left/right
+ * pour que le texte se positionne correctement.
+ *
+ */
+.demo-typing-text {
+    position: absolute; 
+    top: 0.75rem;       
+    left: 0.75rem;      
+    right: 0.75rem;     
+    width: 0%; /* Commence à 0 */
+    overflow: hidden;
+    white-space: pre; /* Respecte les sauts de ligne */
+    font-size: 0.8rem;
+    color: var(--text-dark);
+    /* Animation: "typing" (défini ci-dessous) */
+    animation: typing var(--demo-duration) steps(30, end) infinite;
+}
+/* --- FIN DE LA CORRECTION --- */
+
+
+.demo-typing-cursor {
+    position: absolute;
+    left: 0.75rem;
+    top: 0.75rem;
+    width: 1px;
+    height: 1.1em;
+    background: var(--text-dark);
+    /* Animation: "blink" (défini ci-dessous) */
+    animation: blink var(--demo-duration) infinite;
+}
+
+/* Étape 2: Apparition des CV */
+.demo-cv-list { margin-top: 1.5rem; }
+.demo-cv-item {
+    background: var(--bg-white);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-subtle);
+    opacity: 0; /* Commence caché */
+    /* Animation: "fadeInUp" (défini ci-dessous) */
+    animation: fadeInUp var(--demo-duration) infinite;
+}
+/* On décale l'animation pour chaque CV */
+#cv1 { animation-delay: calc(var(--demo-duration) * 0.25); }
+#cv2 { animation-delay: calc(var(--demo-duration) * 0.28); }
+#cv3 { animation-delay: calc(var(--demo-duration) * 0.31); }
+
+/* Étape 3: Clic sur le Bouton */
+.demo-button {
+    background: var(--primary-blue);
+    color: var(--bg-white);
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--radius);
+    text-align: center;
+    font-weight: 500;
+    /* Animation: "buttonClick" (défini ci-dessous) */
+    animation: buttonClick var(--demo-duration) infinite;
+}
+
+/* Étape 4: Barre de Progression */
+.demo-progress-bar {
+    width: 100%;
+    height: 10px;
+    background: var(--border-color);
+    border-radius: 5px;
+    margin-top: 2rem;
+    overflow: hidden;
+    opacity: 0; /* Commence caché */
+    /* Animation: "progressBar" (défini ci-dessous) */
+    animation: progressBar var(--demo-duration) infinite;
+}
+.demo-progress-bar-inner {
+    width: 0%; /* Commence à 0 */
+    height: 100%;
+    background: var(--primary-blue);
+    border-radius: 5px;
+    /* Animation: "progressFill" (défini ci-dessous) */
+    animation: progressFill var(--demo-duration) infinite;
+}
+
+/* Étape 5: Apparition des Résultats */
+.demo-results {
+    opacity: 0; /* Commence caché */
+    /* Animation: "resultsFadeIn" (défini ci-dessous) */
+    animation: resultsFadeIn var(--demo-duration) infinite;
+}
+.demo-result-card {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+.demo-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.demo-result-header h4 { margin-bottom: 0.25rem; }
+.demo-result-card p { font-size: 0.85rem; margin-bottom: 0.75rem; }
+.demo-score { font-size: 1.25rem; font-weight: 700; }
+.demo-score.good { color: var(--score-good); }
+.demo-score.medium { color: var(--score-medium); }
+
+.demo-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.demo-tags .tag {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+.tag.good { background: #e6f6e9; color: var(--score-good); }
+.tag.bad { background: #fbeae7; color: #d93025; }
+
+/* --- 6. DÉFINITIONS DES KEYFRAMES D'ANIMATION --- */
+
+/* Gère la timeline de 12 secondes (100%) */
+
+@keyframes typing {
+    0%, 90%, 100% { width: 0%; }
+    10% { width: 0%; }
+    30% { width: 100%; }
+}
+
+@keyframes blink {
+    0% { opacity: 1; transform: translateX(0); }
+    10% { opacity: 1; transform: translateX(0); }
+    30% { opacity: 1; transform: translateX(200px); } /* Le curseur suit le texte */
+    31%, 89% { opacity: 0; } /* Disparaît après la frappe */
+    90%, 100% { opacity: 1; transform: translateX(0); } /* Réapparaît pour la boucle */
+}
+
+@keyframes fadeInUp {
+    0%, 30% { opacity: 0; transform: translateY(10px); }
+    40%, 85% { opacity: 1; transform: translateY(0); }
+    90%, 100% { opacity: 0; transform: translateY(10px); }
+}
+
+@keyframes buttonClick {
+    0%, 35% { opacity: 1; transform: scale(1); }
+    40% { opacity: 1; transform: scale(0.95); } /* Clic */
+    41%, 100% { opacity: 0; transform: scale(0.95); } /* Disparaît */
+}
+
+@keyframes progressBar {
+    0%, 40% { opacity: 0; }
+    41%, 60% { opacity: 1; }
+    61%, 100% { opacity: 0; }
+}
+
+@keyframes progressFill {
+    0%, 40% { width: 0%; }
+    60% { width: 100%; }
+    61%, 100% { width: 100%; }
+}
+
+@keyframes resultsFadeIn {
+    0%, 60% { opacity: 0; }
+    65%, 85% { opacity: 1; }
+    90%, 100% { opacity: 0; }
+}
+
+/* --- 7. Responsive (Mobile) --- */
+@media (max-width: 768px) {
+    .hero { padding: 4rem 0 3rem 0; }
+    .hero h1 { font-size: 2.5rem; }
+    .hero .subtitle { font-size: 1.1rem; }
+    
+    .demo-app { flex-direction: column; } /* Passe la maquette en vertical */
+    .demo-sidebar, .demo-main { width: 100%; }
+    .demo-main { min-height: 300px; } /* Donne de la place aux résultats */
+
+    .cta-final h2 { font-size: 2rem; }
+}
