@@ -6,7 +6,7 @@ import json
 import io
 import time
 import traceback
-import pandas as pd  # --- AJOUTÉ --- pour l'export CSV
+import pandas as pd  # Pour l'export CSV
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -27,7 +27,7 @@ if 'is_running' not in st.session_state:
 
 # --- FONCTIONS CLÉS ---
 
-@st.cache_data # --- AJOUTÉ --- : Mettre en cache la conversion CSV
+@st.cache_data # Mettre en cache la conversion CSV
 def convert_df_to_csv(df):
     """Convertit un DataFrame en CSV pour le téléchargement."""
     return df.to_csv(index=False, encoding='utf-8-sig')
@@ -85,7 +85,7 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JS
         }
 
         response = requests.post(
-            "https.openrouter.ai/api/v1/chat/completions",
+            "https://openrouter.ai/api/v1/chat/completions", # <-- CORRIGÉ ICI
             headers=headers,
             json=body,
             timeout=180
@@ -124,10 +124,9 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après). Le JS
 
 # --- PANNEAU LATÉRAL POUR LES INPUTS ---
 with st.sidebar:
-    st.title("RH+ Pro") # --- AJOUTÉ ---
+    st.title("RH+ Pro")
     st.markdown("---")
     
-    # --- AJOUTÉ --- : Guide pour l'utilisateur
     with st.expander("Mode d'emploi", expanded=False):
         st.info(
             """
@@ -139,19 +138,17 @@ with st.sidebar:
 
     st.header("1. Description du Poste")
     job_description = st.text_area(
-        label="Collez ici l'offre d'emploi complète", # --- MODIFIÉ ---
+        label="Collez ici l'offre d'emploi complète",
         height=250, 
-        # label_visibility="collapsed", # --- SUPPRIMÉ (LE BUG) ---
         disabled=st.session_state.is_running,
-        placeholder="Exemple : 'Recherche Développeur Python Junior...'" # --- AJOUTÉ ---
+        placeholder="Exemple : 'Recherche Développeur Python Junior...'"
     )
 
     st.header("2. CV des Candidats")
     uploaded_files = st.file_uploader(
-        label="Chargez un ou plusieurs CV au format PDF", # --- MODIFIÉ ---
+        label="Chargez un ou plusieurs CV au format PDF",
         type="pdf",
         accept_multiple_files=True,
-        # label_visibility="collapsed", # --- SUPPRIMÉ (LE BUG) ---
         disabled=st.session_state.is_running 
     )
 
@@ -207,7 +204,6 @@ if st.session_state.analysis_done:
         
         sorted_results = sorted(st.session_state.all_results, key=lambda x: x.get('score', 0), reverse=True)
         
-        # --- AJOUTÉ --- : Préparation et bouton d'export CSV
         try:
             df = pd.DataFrame(sorted_results)
             # Nettoyer la colonne 'points_forts' pour le CSV
@@ -241,7 +237,6 @@ if st.session_state.analysis_done:
                     points_forts = candidate.get('points_forts', [])
                     if points_forts:
                         st.markdown("**Points forts pour ce poste :**")
-                        # --- MODIFIÉ --- : Affichage en liste à puces
                         ul_items = "".join([f"<li>{point}</li>" for point in points_forts])
                         st.markdown(f"<ul>{ul_items}</ul>", unsafe_allow_html=True)
                     else:
@@ -263,6 +258,5 @@ if st.session_state.analysis_done:
     elif not st.session_state.is_running:
         st.error("L'analyse a échoué ou n'a retourné aucun résultat valide.")
 
-# --- AJOUTÉ --- : État vide professionnel
 elif not st.session_state.is_running:
     st.info("Veuillez remplir la description du poste et charger des CV dans le panneau de gauche, puis cliquez sur 'Analyser'.")
