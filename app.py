@@ -6,7 +6,10 @@ import json
 import io
 import time
 import traceback
-import pandas as pd  # Pour l'export CSV
+import pandas as pd
+# --- MODIFICATION 1 : Imports pour la robustesse ---
+import tenacity
+from requests.exceptions import RequestException
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -46,6 +49,13 @@ def extract_text_from_pdf(file_object):
         st.error(f"Erreur d'extraction PDF pour {file_object.name}: {e}")
         return None
 
+# --- MODIFICATION 2 : Ajout du décorateur de "retry" ---
+@tenacity.retry(
+    wait=tenacity.wait_exponential(multiplier=1, min=2, max=10), # Attend 2s, 4s, 8s...
+    stop=tenacity.stop_after_attempt(3), # Tente 3 fois au total
+    retry=tenacity.retry_if_exception_type((RequestException, IOError)), # Réessaie sur erreurs réseau/API
+    reraise=True # Si ça échoue 3x, on lève l'erreur pour la voir
+)
 def get_single_cv_analysis(cv_text, filename, job_description_text):
     """
     Envoie UN SEUL CV à l'API pour une ANALYSE APPROFONDIE (type RH Senior + ATS).
@@ -56,7 +66,6 @@ def get_single_cv_analysis(cv_text, filename, job_description_text):
         cv_text_truncated = cv_text[:max_cv_length]
         job_desc_truncated = job_description_text[:max_job_length]
         
-        # --- NOUVEAU PROMPT BASÉ SUR TON RAPPORT ---
         prompt = f"""Tu es un expert en recrutement senior et un simulateur d'ATS. Tu dois analyser le CV fourni par rapport à la description de poste, en te basant sur les meilleures pratiques RH (analyse de mots-clés, quantification, détection de "red flags").
 
 DESCRIPTION DU POSTE (cible) :
@@ -97,54 +106,58 @@ Réponds UNIQUEMENT avec un objet JSON valide. L'objet doit contenir les clés s
         }
 
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions", # <-- CORRIGÉ ICI
+            "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=body,
             timeout=180
         )
 
-        if response.status_code == 200:
-            response_data = response.json()
-            raw_response = response_data['choices'][0]['message']['content'].strip()
+        # --- MODIFICATION 3 : Vérification robuste du statut API ---
+        # Si le statut est 4xx ou 5xx, lève une erreur.
+        # "tenacity" va la capter et ré-essayer.
+        response.raise_for_status()
+
+        # Si on arrive ici, le status_code est 200 (succès)
+        response_data = response.json()
+        raw_response = response_data['choices'][0]['message']['content'].strip()
+        
+        try:
+            if raw_response.startswith("```json"):
+                raw_response = raw_response[7:-3].strip()
             
-            try:
-                if raw_response.startswith("```json"):
-                    raw_response = raw_response[7:-3].strip()
+            parsed_json = json.loads(raw_response)
+            
+            required_fields = [
+                'nom_fichier', 'nom', 'score', 'resume', 
+                'points_forts', 'points_faibles_ou_risques',
+                'elements_quantifies', 'analyse_ats'
+            ]
+            
+            if all(field in parsed_json for field in required_fields) and \
+                'mots_cles_trouves' in parsed_json['analyse_ats'] and \
+                'mots_cles_manquants' in parsed_json['analyse_ats'] and \
+                'stabilite' in parsed_json['analyse_ats']:
                 
-                parsed_json = json.loads(raw_response)
-                
-                # --- VÉRIFICATION DES NOUVEAUX CHAMPS ---
-                required_fields = [
-                    'nom_fichier', 'nom', 'score', 'resume', 
-                    'points_forts', 'points_faibles_ou_risques',
-                    'elements_quantifies', 'analyse_ats'
-                ]
-                
-                if all(field in parsed_json for field in required_fields) and \
-                   'mots_cles_trouves' in parsed_json['analyse_ats'] and \
-                   'mots_cles_manquants' in parsed_json['analyse_ats'] and \
-                   'stabilite' in parsed_json['analyse_ats']:
-                    
-                    return parsed_json
-                else:
-                    st.warning(f"JSON incomplet ou mal structuré pour {filename}. Champs manquants.")
-                    st.json(parsed_json) # Pour déboguer
-                    return None
-                    
-            except json.JSONDecodeError:
-                st.error(f"Format JSON invalide pour {filename}. Réponse brute :")
-                st.code(raw_response)
+                return parsed_json
+            else:
+                st.warning(f"JSON incomplet ou mal structuré pour {filename}. Champs manquants.")
+                st.json(parsed_json) 
                 return None
-        else:
-            st.error(f"Erreur API ({response.status_code}) pour {filename}: {response.text}")
+                
+        except json.JSONDecodeError:
+            st.error(f"Format JSON invalide pour {filename}. Réponse brute :")
+            st.code(raw_response)
             return None
 
+    # L'exception est attrapée APRÈS les 3 échecs de "tenacity"
     except Exception as e:
-        st.warning(f"L'analyse de {filename} a échoué (Raison: {e}). Passage au suivant.")
+        st.error(f"L'analyse de {filename} a échoué après 3 tentatives (Raison: {e}). Passage au suivant.")
         traceback.print_exc()
         return None
 
 # --- INTERFACE UTILISATEUR (UI) ---
+# (Le reste de ton code est identique et correct)
+# ... (colle le reste de ton code à partir d'ici) ...
 
 with st.sidebar:
     st.title("RH+ Pro")
@@ -220,7 +233,7 @@ if analyze_button:
         st.session_state.is_running = False
         st.rerun()
 
-# --- AFFICHAGE DES RÉSULTATS (ENTIÈREMENT REFAIT) ---
+# --- AFFICHAGE DES RÉSULTATS ---
 if st.session_state.analysis_done:
     if st.session_state.all_results:
         
@@ -229,7 +242,6 @@ if st.session_state.analysis_done:
         # --- EXPORT CSV AMÉLIORÉ ---
         try:
             df = pd.json_normalize(sorted_results)
-            # Nettoyer les listes pour le CSV
             for col in ['points_forts', 'points_faibles_ou_risques', 'elements_quantifies', 'analyse_ats.mots_cles_trouves', 'analyse_ats.mots_cles_manquants']:
                 if col in df.columns:
                     df[col] = df[col].apply(lambda x: "; ".join(x) if isinstance(x, list) else x)
@@ -276,25 +288,22 @@ if st.session_state.analysis_done:
                 
                 st.markdown("---")
                 
-                # --- NOUVEAUX ONGLETS D'ANALYSE ---
+                # --- ONGLETS D'ANALYSE ---
                 tab1, tab2 = st.tabs(["Synthèse Recruteur", "Simulation ATS & Mots-clés"])
 
                 with tab1:
                     st.subheader("Analyse Humaine (Potentiel & Risques)")
                     
-                    # Points Forts
                     st.markdown("**Points Forts :**")
                     points_forts = candidate.get('points_forts', [])
                     if points_forts:
                         for point in points_forts: st.markdown(f"- {point}")
                     
-                    # Red Flags
                     st.markdown("**Points Faibles / Risques (Red Flags) :**")
                     points_faibles = candidate.get('points_faibles_ou_risques', [])
                     if points_faibles:
                         for point in points_faibles: st.warning(point, icon="🚩")
                     
-                    # Quantification
                     st.markdown("**Indicateurs de Performance (Quantification) :**")
                     elements_quantifies = candidate.get('elements_quantifies', ["Aucune quantification notable"])
                     if elements_quantifies[0] != "Aucune quantification notable":
