@@ -1,6 +1,6 @@
 # --- BIBLIOTHÈQUES NÉCESSAIRES ---
 import streamlit as st
-import requests 
+import requests
 import PyPDF2
 import json
 import io
@@ -65,7 +65,7 @@ def get_single_cv_analysis(cv_text, filename, job_description_text):
         max_job_length = 2000
         cv_text_truncated = cv_text[:max_cv_length]
         job_desc_truncated = job_description_text[:max_job_length]
-        
+
         prompt = f"""Tu es un expert en recrutement senior et un simulateur d'ATS. Tu dois analyser le CV fourni par rapport à la description de poste, en te basant sur les meilleures pratiques RH (analyse de mots-clés, quantification, détection de "red flags").
 
 DESCRIPTION DU POSTE (cible) :
@@ -94,18 +94,19 @@ Réponds UNIQUEMENT avec un objet JSON valide. L'objet doit contenir les clés s
     * "mots_cles_manquants": Une liste de 3-5 mots-clés importants de l'offre NON trouvés dans le CV.
     * "stabilite": Un court avis (1 ligne) sur la stabilité du parcours (ex: "Bonne stabilité globale" ou "Parcours très instable (job-hopping)").
 """
-        
+
         headers = {
             "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
             "Content-Type": "application/json"
         }
-        
+
         body = {
             "model": "mistralai/mistral-7b-instruct:free",
             "messages": [{"role": "user", "content": prompt}]
         }
 
         response = requests.post(
+            # --- CORRECTION DE L'URL ICI ---
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=body,
@@ -117,34 +118,34 @@ Réponds UNIQUEMENT avec un objet JSON valide. L'objet doit contenir les clés s
 
         response_data = response.json()
         raw_response = response_data['choices'][0]['message']['content'].strip()
-        
+
         try:
             if raw_response.startswith("```json"):
                 raw_response = raw_response[7:-3].strip()
-            
+
             parsed_json = json.loads(raw_response)
-            
+
             required_fields = [
-                'nom_fichier', 'nom', 'score', 'resume', 
+                'nom_fichier', 'nom', 'score', 'resume',
                 'points_forts', 'points_faibles_ou_risques',
                 'elements_quantifies', 'analyse_ats'
             ]
-            
+
             # Utilise .get() pour éviter les erreurs si 'analyse_ats' n'existe pas
             analyse_ats_data = parsed_json.get('analyse_ats', {})
-            
+
             if all(field in parsed_json for field in required_fields) and \
                 'mots_cles_trouves' in analyse_ats_data and \
                 'mots_cles_manquants' in analyse_ats_data and \
                 'stabilite' in analyse_ats_data:
-                
+
                 return parsed_json
             else:
                 st.warning(f"JSON incomplet ou mal structuré reçu pour {filename}.")
                 # Afficher le JSON reçu pour aider au debug
-                st.json(parsed_json) 
+                st.json(parsed_json)
                 return None
-                
+
         except json.JSONDecodeError:
             st.error(f"Format JSON invalide pour {filename}. Réponse brute :")
             st.code(raw_response)
@@ -161,7 +162,7 @@ Réponds UNIQUEMENT avec un objet JSON valide. L'objet doit contenir les clés s
 with st.sidebar:
     st.title("RH+ Pro")
     st.markdown("---")
-    
+
     with st.expander("Mode d'emploi", expanded=False):
         st.info(
             """
@@ -174,7 +175,7 @@ with st.sidebar:
     st.header("1. Description du Poste")
     job_description = st.text_area(
         label="Collez ici l'offre d'emploi complète",
-        height=250, 
+        height=250,
         disabled=st.session_state.is_running,
         placeholder="Exemple : 'Recherche Développeur Python Junior...'"
     )
@@ -184,7 +185,7 @@ with st.sidebar:
         label="Chargez un ou plusieurs CV au format PDF",
         type="pdf",
         accept_multiple_files=True,
-        disabled=st.session_state.is_running 
+        disabled=st.session_state.is_running
     )
 
 st.title("Synthèse de l'Analyse")
@@ -192,8 +193,8 @@ st.markdown("Optimisez votre présélection. Chargez plusieurs CV, analysez-les 
 
 st.markdown("")
 analyze_button = st.button(
-    "Analyser les Candidatures", 
-    type="primary", 
+    "Analyser les Candidatures",
+    type="primary",
     use_container_width=True,
     disabled=st.session_state.is_running
 )
@@ -210,10 +211,10 @@ if analyze_button:
         st.session_state.is_running = True
         st.session_state.all_results = []
         st.session_state.file_contents = {}
-        st.session_state.analysis_done = True 
-        
+        st.session_state.analysis_done = True
+
         progress_bar = st.progress(0, text="Initialisation de l'analyse...")
-        
+
         # --- Limite indicative pour l'utilisateur ---
         if len(uploaded_files) > 15:
             st.info("Traitement de nombreux CV. L'analyse peut prendre plusieurs minutes...", icon="⏳")
@@ -221,20 +222,20 @@ if analyze_button:
         for i, uploaded_file in enumerate(uploaded_files):
             progress_text = f"Analyse de {uploaded_file.name} ({i+1}/{len(uploaded_files)})..."
             progress_bar.progress((i + 1) / len(uploaded_files), text=progress_text)
-            
+
             file_bytes = uploaded_file.getvalue()
             st.session_state.file_contents[uploaded_file.name] = file_bytes
-            
+
             text = extract_text_from_pdf(io.BytesIO(file_bytes))
-            
+
             if text:
                 # Ajout d'une petite pause entre les appels API pour éviter les rate limits
-                time.sleep(1) 
-                
+                time.sleep(1)
+
                 single_result = get_single_cv_analysis(text, uploaded_file.name, job_description)
                 if single_result:
                     st.session_state.all_results.append(single_result)
-        
+
         progress_bar.empty()
         st.session_state.is_running = False
         st.rerun()
@@ -242,9 +243,9 @@ if analyze_button:
 # --- AFFICHAGE DES RÉSULTATS ---
 if st.session_state.analysis_done:
     if st.session_state.all_results:
-        
+
         sorted_results = sorted(st.session_state.all_results, key=lambda x: x.get('score', 0), reverse=True)
-        
+
         # --- EXPORT CSV AMÉLIORÉ ---
         try:
             df = pd.json_normalize(sorted_results)
@@ -253,9 +254,9 @@ if st.session_state.analysis_done:
                 if col in df.columns:
                     # Gère le cas où la colonne pourrait ne pas exister ou contenir des non-listes
                     df[col] = df[col].apply(lambda x: "; ".join(map(str, x)) if isinstance(x, list) else str(x))
-            
+
             csv_data = convert_df_to_csv(df)
-            
+
             st.download_button(
                 label="Exporter tous les résultats (CSV)",
                 data=csv_data,
@@ -268,10 +269,10 @@ if st.session_state.analysis_done:
             st.error(f"Erreur lors de la préparation de l'export CSV : {e}")
             traceback.print_exc() # Pour aider au debug si l'export échoue
 
-        
+
         st.subheader(f"Classement des {len(sorted_results)} Profils Analysés")
-        
-        for i, candidate in enumerate(sorted_results): 
+
+        for i, candidate in enumerate(sorted_results):
             score = candidate.get('score', 0)
             nom = candidate.get('nom', 'N/A')
             nom_fichier = candidate.get('nom_fichier', 'N/A')
@@ -282,7 +283,7 @@ if st.session_state.analysis_done:
                 with col1:
                     st.markdown(f"### {i+1}. {nom} ({nom_fichier})")
                     st.markdown(f"**Résumé (Scan 30s) :** *{candidate.get('resume', 'N/A')}*")
-                
+
                 with col2:
                     st.metric(label="Score d'Adéquation", value=f"{score}%")
                     original_filename = candidate.get('nom_fichier')
@@ -292,31 +293,31 @@ if st.session_state.analysis_done:
                             data=st.session_state.file_contents[original_filename],
                             file_name=original_filename,
                             mime="application/pdf",
-                            key=f"btn_{original_filename}_{i}" 
+                            key=f"btn_{original_filename}_{i}"
                         )
-                
+
                 st.markdown("---")
-                
+
                 # --- ONGLETS D'ANALYSE ---
                 tab1, tab2 = st.tabs(["Synthèse Recruteur", "Simulation ATS & Mots-clés"])
 
                 with tab1:
                     st.subheader("Analyse Humaine (Potentiel & Risques)")
-                    
+
                     st.markdown("**Points Forts :**")
                     points_forts = candidate.get('points_forts', [])
                     if points_forts:
                         for point in points_forts: st.markdown(f"- {point}")
                     else:
                         st.info("Aucun point fort spécifique identifié pour ce poste.")
-                    
+
                     st.markdown("**Points Faibles / Risques (Red Flags) :**")
                     points_faibles = candidate.get('points_faibles_ou_risques', [])
                     if points_faibles:
                         for point in points_faibles: st.warning(point, icon="🚩")
                     else:
                         st.info("Aucun risque majeur identifié.")
-                        
+
                     st.markdown("**Indicateurs de Performance (Quantification) :**")
                     elements_quantifies = candidate.get('elements_quantifies', [])
                     # Filtre pour enlever ["Aucune quantification notable"] si c'est la seule réponse
@@ -329,9 +330,9 @@ if st.session_state.analysis_done:
                 with tab2:
                     st.subheader("Analyse Machine (ATS & Stabilité)")
                     ats_data = candidate.get('analyse_ats', {})
-                    
+
                     col_ats1, col_ats2 = st.columns(2)
-                    
+
                     with col_ats1:
                         st.markdown("**Mots-clés de l'offre TROUVÉS :**")
                         mots_cles_trouves = ats_data.get('mots_cles_trouves', [])
@@ -339,10 +340,10 @@ if st.session_state.analysis_done:
                             st.success(f"{', '.join(mots_cles_trouves)}", icon="✅")
                         else:
                             st.info("Peu de mots-clés clés trouvés.")
-                        
+
                         st.markdown("**Stabilité du Parcours :**")
                         st.info(f"{ats_data.get('stabilite', 'N/A')}", icon="⏳")
-                        
+
                     with col_ats2:
                         st.markdown("**Mots-clés de l'offre MANQUANTS :**")
                         mots_cles_manquants = ats_data.get('mots_cles_manquants', [])
@@ -351,7 +352,7 @@ if st.session_state.analysis_done:
                         else:
                             st.info("Correspondance élevée des mots-clés.")
 
-                        
+
     elif not st.session_state.is_running:
         st.error("L'analyse a échoué ou n'a retourné aucun résultat valide.")
 
