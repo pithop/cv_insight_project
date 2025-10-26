@@ -7,7 +7,7 @@ import io
 import time
 import traceback
 import pandas as pd
-# --- MODIFICATION 1 : Imports pour la robustesse ---
+# --- Imports pour la robustesse ---
 import tenacity
 from requests.exceptions import RequestException
 
@@ -49,7 +49,7 @@ def extract_text_from_pdf(file_object):
         st.error(f"Erreur d'extraction PDF pour {file_object.name}: {e}")
         return None
 
-# --- MODIFICATION 2 : Ajout du décorateur de "retry" ---
+# --- Ajout du décorateur de "retry" ---
 @tenacity.retry(
     wait=tenacity.wait_exponential(multiplier=1, min=2, max=10), # Attend 2s, 4s, 8s...
     stop=tenacity.stop_after_attempt(3), # Tente 3 fois au total
@@ -112,12 +112,9 @@ Réponds UNIQUEMENT avec un objet JSON valide. L'objet doit contenir les clés s
             timeout=180
         )
 
-        # --- MODIFICATION 3 : Vérification robuste du statut API ---
-        # Si le statut est 4xx ou 5xx, lève une erreur.
-        # "tenacity" va la capter et ré-essayer.
+        # --- Vérification robuste du statut API ---
         response.raise_for_status()
 
-        # Si on arrive ici, le status_code est 200 (succès)
         response_data = response.json()
         raw_response = response_data['choices'][0]['message']['content'].strip()
         
@@ -133,14 +130,18 @@ Réponds UNIQUEMENT avec un objet JSON valide. L'objet doit contenir les clés s
                 'elements_quantifies', 'analyse_ats'
             ]
             
+            # Utilise .get() pour éviter les erreurs si 'analyse_ats' n'existe pas
+            analyse_ats_data = parsed_json.get('analyse_ats', {})
+            
             if all(field in parsed_json for field in required_fields) and \
-                'mots_cles_trouves' in parsed_json['analyse_ats'] and \
-                'mots_cles_manquants' in parsed_json['analyse_ats'] and \
-                'stabilite' in parsed_json['analyse_ats']:
+                'mots_cles_trouves' in analyse_ats_data and \
+                'mots_cles_manquants' in analyse_ats_data and \
+                'stabilite' in analyse_ats_data:
                 
                 return parsed_json
             else:
-                st.warning(f"JSON incomplet ou mal structuré pour {filename}. Champs manquants.")
+                st.warning(f"JSON incomplet ou mal structuré reçu pour {filename}.")
+                # Afficher le JSON reçu pour aider au debug
                 st.json(parsed_json) 
                 return None
                 
@@ -156,8 +157,6 @@ Réponds UNIQUEMENT avec un objet JSON valide. L'objet doit contenir les clés s
         return None
 
 # --- INTERFACE UTILISATEUR (UI) ---
-# (Le reste de ton code est identique et correct)
-# ... (colle le reste de ton code à partir d'ici) ...
 
 with st.sidebar:
     st.title("RH+ Pro")
@@ -167,7 +166,7 @@ with st.sidebar:
         st.info(
             """
             1.  **Collez** l'offre d'emploi dans le champ "Description du Poste".
-            2.  **Chargez** un ou plusieurs CV au format PDF.
+            2.  **Chargez** 5 à 10 CV au format PDF maximum pour une analyse optimale.
             3.  **Cliquez** sur "Analyser" et consultez les résultats.
             """
         )
@@ -215,6 +214,10 @@ if analyze_button:
         
         progress_bar = st.progress(0, text="Initialisation de l'analyse...")
         
+        # --- Limite indicative pour l'utilisateur ---
+        if len(uploaded_files) > 15:
+            st.info("Traitement de nombreux CV. L'analyse peut prendre plusieurs minutes...", icon="⏳")
+
         for i, uploaded_file in enumerate(uploaded_files):
             progress_text = f"Analyse de {uploaded_file.name} ({i+1}/{len(uploaded_files)})..."
             progress_bar.progress((i + 1) / len(uploaded_files), text=progress_text)
@@ -225,6 +228,9 @@ if analyze_button:
             text = extract_text_from_pdf(io.BytesIO(file_bytes))
             
             if text:
+                # Ajout d'une petite pause entre les appels API pour éviter les rate limits
+                time.sleep(1) 
+                
                 single_result = get_single_cv_analysis(text, uploaded_file.name, job_description)
                 if single_result:
                     st.session_state.all_results.append(single_result)
@@ -242,9 +248,11 @@ if st.session_state.analysis_done:
         # --- EXPORT CSV AMÉLIORÉ ---
         try:
             df = pd.json_normalize(sorted_results)
+            # Nettoyer les listes pour le CSV
             for col in ['points_forts', 'points_faibles_ou_risques', 'elements_quantifies', 'analyse_ats.mots_cles_trouves', 'analyse_ats.mots_cles_manquants']:
                 if col in df.columns:
-                    df[col] = df[col].apply(lambda x: "; ".join(x) if isinstance(x, list) else x)
+                    # Gère le cas où la colonne pourrait ne pas exister ou contenir des non-listes
+                    df[col] = df[col].apply(lambda x: "; ".join(map(str, x)) if isinstance(x, list) else str(x))
             
             csv_data = convert_df_to_csv(df)
             
@@ -258,6 +266,7 @@ if st.session_state.analysis_done:
             st.markdown("---")
         except Exception as e:
             st.error(f"Erreur lors de la préparation de l'export CSV : {e}")
+            traceback.print_exc() # Pour aider au debug si l'export échoue
 
         
         st.subheader(f"Classement des {len(sorted_results)} Profils Analysés")
@@ -298,16 +307,22 @@ if st.session_state.analysis_done:
                     points_forts = candidate.get('points_forts', [])
                     if points_forts:
                         for point in points_forts: st.markdown(f"- {point}")
+                    else:
+                        st.info("Aucun point fort spécifique identifié pour ce poste.")
                     
                     st.markdown("**Points Faibles / Risques (Red Flags) :**")
                     points_faibles = candidate.get('points_faibles_ou_risques', [])
                     if points_faibles:
                         for point in points_faibles: st.warning(point, icon="🚩")
-                    
+                    else:
+                        st.info("Aucun risque majeur identifié.")
+                        
                     st.markdown("**Indicateurs de Performance (Quantification) :**")
-                    elements_quantifies = candidate.get('elements_quantifies', ["Aucune quantification notable"])
-                    if elements_quantifies[0] != "Aucune quantification notable":
-                        for point in elements_quantifies: st.success(point, icon="📈")
+                    elements_quantifies = candidate.get('elements_quantifies', [])
+                    # Filtre pour enlever ["Aucune quantification notable"] si c'est la seule réponse
+                    elements_quantifies_filtered = [q for q in elements_quantifies if q != "Aucune quantification notable"]
+                    if elements_quantifies_filtered:
+                        for point in elements_quantifies_filtered: st.success(point, icon="📈")
                     else:
                         st.info("Aucune réalisation chiffrée notable détectée.")
 
@@ -322,6 +337,8 @@ if st.session_state.analysis_done:
                         mots_cles_trouves = ats_data.get('mots_cles_trouves', [])
                         if mots_cles_trouves:
                             st.success(f"{', '.join(mots_cles_trouves)}", icon="✅")
+                        else:
+                            st.info("Peu de mots-clés clés trouvés.")
                         
                         st.markdown("**Stabilité du Parcours :**")
                         st.info(f"{ats_data.get('stabilite', 'N/A')}", icon="⏳")
@@ -331,6 +348,8 @@ if st.session_state.analysis_done:
                         mots_cles_manquants = ats_data.get('mots_cles_manquants', [])
                         if mots_cles_manquants:
                             st.error(f"{', '.join(mots_cles_manquants)}", icon="❌")
+                        else:
+                            st.info("Correspondance élevée des mots-clés.")
 
                         
     elif not st.session_state.is_running:
