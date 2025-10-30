@@ -30,7 +30,10 @@ pyarrow==21.0.0
 pydantic==2.12.3
 pydantic_core==2.41.4
 pydeck==0.9.1
-PyPDF2==3.0.1
+# --- MOTEUR PDF ROBUSTE ---
+PyMuPDF==1.24.9
+# PyPDF2 A ÉTÉ SUPPRIMÉ
+# ------------------------
 python-dateutil==2.9.0.post0
 pytz==2025.2
 referencing==0.37.0
@@ -49,3 +52,5 @@ typing_extensions==4.15.0
 tzdata==2025.2
 urllib3==2.5.0
 watchdog==6.0.0
+duckduckgo_search
+# --- groq A ÉTÉ SUPPRIMÉ DÉFINITIVEMENT ---
